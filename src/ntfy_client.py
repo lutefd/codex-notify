@@ -11,9 +11,18 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
+from status_labels import LabelError, validate_label, validate_source
 
-MESSAGE = "Codex turn completed."
-TITLE = "Codex"
+MESSAGE_BY_SOURCE = {
+    "codex": "Codex turn completed.",
+    "claude": "Claude turn completed.",
+}
+TITLE_BY_SOURCE = {
+    "codex": "Codex",
+    "claude": "Claude",
+}
+MESSAGE = MESSAGE_BY_SOURCE["codex"]
+TITLE = TITLE_BY_SOURCE["codex"]
 DEFAULT_TIMEOUT_SECONDS = 10.0
 _TOPIC_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -116,17 +125,30 @@ def load_settings(environ: Mapping[str, str] | None = None) -> NtfySettings:
 def publish(
     settings: NtfySettings,
     *,
+    source: str = "codex",
+    label: str | None = None,
     opener: Callable[..., Any] = urlopen,
 ) -> None:
-    """Publish only the fixed completion message to the configured topic."""
+    """Publish only a fixed source message with an optional safe label."""
+
+    try:
+        safe_source = validate_source(source)
+        safe_label = None if label is None else validate_label(label)
+    except LabelError as exc:
+        raise NtfyConfigurationError(str(exc)) from exc
+    message = MESSAGE_BY_SOURCE[safe_source]
+    title = TITLE_BY_SOURCE[safe_source]
+    if safe_label is not None:
+        message = f"{message} [{safe_label}]"
+        title = f"{title} [{safe_label}]"
 
     request = Request(
         settings.endpoint,
-        data=MESSAGE.encode("utf-8"),
+        data=message.encode("utf-8"),
         headers={
             "Authorization": f"Bearer {settings.token}",
             "Content-Type": "text/plain; charset=utf-8",
-            "Title": settings.title,
+            "Title": title,
             "Priority": "default",
         },
         method="POST",

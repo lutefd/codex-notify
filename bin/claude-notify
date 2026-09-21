@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""Executable Claude Code Stop hook for status-only notifications."""
+
+from pathlib import Path
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from claude_notify import main  # noqa: E402
+
+
+raise SystemExit(main())

@@ -30,7 +30,11 @@ class GatewayTests(unittest.TestCase):
     event = json.dumps({"type": SUPPORTED_EVENT}, separators=(",", ":")).encode()
 
     def test_exact_schema_is_accepted(self) -> None:
-        validate_event_payload(self.event)
+        self.assertEqual(validate_event_payload(self.event), ("codex", None))
+
+    def test_claude_source_and_safe_label_are_accepted(self) -> None:
+        event = b'{"type":"agent-turn-complete","source":"claude","label":"Research"}'
+        self.assertEqual(validate_event_payload(event), ("claude", "Research"))
 
     def test_prompt_and_other_fields_are_rejected(self) -> None:
         for body in (
@@ -38,6 +42,10 @@ class GatewayTests(unittest.TestCase):
             b'{"type":"agent-turn-complete","cwd":"/private"}',
             b'{"type":"approval-requested"}',
             b'{"type":"agent-turn-complete","type":"agent-turn-complete"}',
+            b'{"type":"agent-turn-complete","source":"other"}',
+            b'{"type":"agent-turn-complete","label":"private\ntext"}',
+            b'{"type":"agent-turn-complete","label":null}',
+            b'{"type":"agent-turn-complete","label":"' + b"x" * 49 + b'"}',
         ):
             with self.assertRaises(GatewayRequestError) as error:
                 validate_event_payload(body)
@@ -64,6 +72,17 @@ class GatewayTests(unittest.TestCase):
             publisher=lambda: published.append(True),
         )
         self.assertEqual(published, [True])
+
+    def test_claude_event_publishes_only_source_and_label_metadata(self) -> None:
+        published: list[object] = []
+
+        process_event(
+            b'{"type":"agent-turn-complete","source":"claude","label":"Research"}',
+            f"Bearer {self.token}",
+            self.token,
+            publisher=lambda source, label: published.append((source, label)),
+        )
+        self.assertEqual(published, [("claude", "Research")])
 
     def test_auth_compare_is_exact(self) -> None:
         authorize(f"Bearer {self.token}", self.token)
@@ -115,6 +134,24 @@ class GatewayTests(unittest.TestCase):
                 )
                 self.assertEqual(self._http_error_code(unauthorized), 401)
                 self.assertEqual(published, [True])
+
+                claude_published: list[object] = []
+                claude = Request(
+                    endpoint,
+                    data=b'{"type":"agent-turn-complete","source":"claude","label":"Research"}',
+                    headers={
+                        "Authorization": f"Bearer {self.token}",
+                        "Content-Type": "application/json",
+                    },
+                    method="POST",
+                )
+                with patch(
+                    "codex_notify_gateway.publish",
+                    lambda _settings, **kwargs: claude_published.append(kwargs),
+                ):
+                    with urlopen(claude, timeout=2) as response:
+                        self.assertEqual(response.status, 204)
+                self.assertEqual(claude_published, [{"source": "claude", "label": "Research"}])
         finally:
             server.shutdown()
             server.server_close()

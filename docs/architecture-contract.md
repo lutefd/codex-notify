@@ -16,10 +16,19 @@ private Docker network → codex-notify-ntfy:80 + publisher token
 ntfy canonical HTTPS host → iPhone reader account
 ```
 
-The gateway's accepted request is exactly
-`{"type":"agent-turn-complete"}`. It rejects unknown keys, prompt text,
-assistant output, paths, and oversized bodies. Its ntfy call has no dependency
-on the incoming request body and always publishes `Codex turn completed.`.
+The gateway accepts the backward-compatible Codex request
+`{"type":"agent-turn-complete"}` and the bounded forms that add
+`source: "codex"|"claude"` and an optional 1–48 character safe label. It
+rejects unknown keys, prompt text, assistant output, paths, invalid labels,
+and oversized bodies. Its ntfy call has no dependency on incoming prompts,
+assistant output, paths, or session identifiers. It publishes one fixed source
+message and appends only the validated local label when one is configured.
+
+Codex supplies an opaque `thread-id` to its host notification command; Claude
+Code supplies an opaque `session_id` to a `Stop` hook. The host helpers use
+those values only as keys in a local label map. They never send the IDs or
+read transcript content. The same ntfy topic and reader/publisher credentials
+serve both sources.
 
 The gateway must be the only public route for work-computer publishing. The
 ntfy service can be externally reachable for the iPhone subscription route,

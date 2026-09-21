@@ -19,11 +19,20 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
+from status_labels import LabelError, get_label, remember_identifier, validate_label, validate_source
+
 
 SUPPORTED_EVENT = "agent-turn-complete"
 DEFAULT_TIMEOUT_SECONDS = 10.0
 MAX_TIMEOUT_SECONDS = 60.0
-_EVENT_PAYLOAD = json.dumps({"type": SUPPORTED_EVENT}, separators=(",", ":")).encode("utf-8")
+
+
+@dataclass(frozen=True)
+class CompletionNotification:
+    """The only Codex metadata retained locally by the helper."""
+
+    source: str
+    identifier: str | None
 
 
 class ConfigurationError(ValueError):
@@ -51,6 +60,16 @@ def parse_event(raw: str) -> str | None:
     become relay content.
     """
 
+    return (
+        SUPPORTED_EVENT
+        if parse_notification(raw) is not None
+        else None
+    )
+
+
+def parse_notification(raw: str) -> CompletionNotification | None:
+    """Parse Codex input while retaining only its opaque session identifier."""
+
     try:
         event: Any = json.loads(raw)
     except (TypeError, json.JSONDecodeError) as exc:
@@ -60,7 +79,10 @@ def parse_event(raw: str) -> str | None:
         raise ConfigurationError("Codex notification input must be a JSON object")
     if event.get("type") != SUPPORTED_EVENT:
         return None
-    return SUPPORTED_EVENT
+    identifier = event.get("thread-id")
+    if not isinstance(identifier, str):
+        identifier = None
+    return CompletionNotification(source="codex", identifier=identifier)
 
 
 def _required_text(environ: Mapping[str, str], name: str) -> str:
@@ -135,13 +157,27 @@ def load_settings(environ: Mapping[str, str] | None = None) -> RelaySettings:
 def publish(
     settings: RelaySettings,
     *,
+    source: str = "codex",
+    label: str | None = None,
     opener: Callable[..., Any] = urlopen,
 ) -> None:
-    """POST the fixed status event to the relay."""
+    """POST a fixed completion event and an optional safe local label."""
+
+    try:
+        safe_source = validate_source(source)
+        safe_label = None if label is None else validate_label(label)
+    except LabelError as exc:
+        raise ConfigurationError(str(exc)) from exc
+    payload: dict[str, str] = {"type": SUPPORTED_EVENT}
+    if safe_source != "codex":
+        payload["source"] = safe_source
+    if safe_label is not None:
+        payload["label"] = safe_label
+    event_payload = json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
     request = Request(
         settings.url,
-        data=_EVENT_PAYLOAD,
+        data=event_payload,
         headers={
             "Authorization": f"Bearer {settings.token}",
             "Content-Type": "application/json",
@@ -182,11 +218,24 @@ def main(
     error_stream = sys.stderr if stderr is None else stderr
 
     try:
-        event = parse_event(_input_argument(args, input_stream))
-        if event is None:
+        notification = parse_notification(_input_argument(args, input_stream))
+        if notification is None:
             return 0
         settings = load_settings(environ)
-        publish(settings, opener=opener)
+        remember_identifier(notification.source, notification.identifier, environ=environ)
+        env = os.environ if environ is None else environ
+        configured_label = env.get("CODEX_NOTIFY_LABEL", "").strip()
+        label = configured_label or get_label(
+            notification.source,
+            notification.identifier,
+            environ=environ,
+        )
+        if configured_label:
+            try:
+                label = validate_label(configured_label)
+            except LabelError as exc:
+                raise ConfigurationError(str(exc)) from exc
+        publish(settings, source=notification.source, label=label, opener=opener)
     except (ConfigurationError, DeliveryError) as exc:
         print(f"codex-notify: {exc}", file=error_stream)
         return 1

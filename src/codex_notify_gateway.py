@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hmac
+import inspect
 import json
 import os
 import sys
@@ -14,6 +15,7 @@ from urllib.parse import urlsplit
 
 from codex_notify import SUPPORTED_EVENT, _read_token
 from ntfy_client import NtfyDeliveryError, NtfySettings, load_settings, publish
+from status_labels import LabelError, validate_label, validate_source
 
 
 PUBLIC_PATH = "/v1/codex/turn-complete"
@@ -37,8 +39,8 @@ class GatewaySettings:
     listen_port: int = 8080
 
 
-def validate_event_payload(raw: bytes) -> None:
-    """Require the exact event object and reject arbitrary text fields."""
+def validate_event_payload(raw: bytes) -> tuple[str, str | None]:
+    """Validate the bounded source/label event and reject arbitrary text."""
 
     if len(raw) > MAX_BODY_BYTES:
         raise GatewayRequestError(413, "request too large")
@@ -46,10 +48,22 @@ def validate_event_payload(raw: bytes) -> None:
         event = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_object)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
         raise GatewayRequestError(400, "invalid event") from exc
-    if not isinstance(event, dict) or set(event) != {"type"}:
+    if not isinstance(event, dict) or not set(event) <= {"type", "source", "label"}:
         raise GatewayRequestError(400, "invalid event")
     if event.get("type") != SUPPORTED_EVENT:
         raise GatewayRequestError(400, "invalid event")
+    source = event.get("source", "codex")
+    try:
+        safe_source = validate_source(source)
+    except LabelError as exc:
+        raise GatewayRequestError(400, "invalid event") from exc
+    label: str | None = None
+    if "label" in event:
+        try:
+            label = validate_label(event["label"])
+        except LabelError as exc:
+            raise GatewayRequestError(400, "invalid event") from exc
+    return safe_source, label
 
 
 def _strict_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -72,14 +86,24 @@ def process_event(
     authorization: str | None,
     token: str,
     *,
-    publisher: Callable[[], None],
+    publisher: Callable[..., None],
 ) -> None:
-    """Validate a request and invoke a publisher with no request content."""
+    """Validate a request and invoke a fixed-message publisher."""
 
     authorize(authorization, token)
-    validate_event_payload(raw)
+    source, label = validate_event_payload(raw)
     try:
-        publisher()
+        if source == "codex" and label is None:
+            try:
+                inspect.signature(publisher).bind(source, label)
+            except (TypeError, ValueError):
+                # Keep the small internal function API compatible with the
+                # original Codex-only publisher callback.
+                publisher()
+            else:
+                publisher(source, label)
+        else:
+            publisher(source, label)
     except NtfyDeliveryError as exc:
         raise GatewayRequestError(502, "notification backend unavailable") from exc
 
@@ -148,11 +172,19 @@ class GatewayHandler(BaseHTTPRequestHandler):
             return
         try:
             raw = self.rfile.read(content_length)
+
+            def publish_request(source: str, label: str | None) -> None:
+                settings = self.server.settings  # type: ignore[attr-defined]
+                if source == "codex" and label is None:
+                    publish(settings.ntfy)  # type: ignore[attr-defined]
+                else:
+                    publish(settings.ntfy, source=source, label=label)  # type: ignore[attr-defined]
+
             process_event(
                 raw,
                 self.headers.get("Authorization"),
                 self.server.settings.token,  # type: ignore[attr-defined]
-                publisher=lambda: publish(self.server.settings.ntfy),  # type: ignore[attr-defined]
+                publisher=publish_request,
             )
         except GatewayRequestError as exc:
             self._respond(exc.status)

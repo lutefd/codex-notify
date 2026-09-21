@@ -5,9 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "codex-notify"
 version = "0.1.0"
-description = "Status-only Codex completion notifications via ntfy"
+description = "Status-only Codex and Claude completion notifications via ntfy"
 requires-python = ">=3.10"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["codex_notify", "codex_notify_gateway", "ntfy_client"]
+py-modules = [
+  "claude_notify",
+  "codex_notify",
+  "codex_notify_gateway",
+  "label_cli",
+  "ntfy_client",
+  "status_labels",
+]

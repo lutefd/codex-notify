@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -48,6 +49,26 @@ class NtfyClientTests(unittest.TestCase):
         self.assertEqual(request.method, "POST")
         self.assertEqual(request.headers["Authorization"], "Bearer publisher_token")
         self.assertEqual(request.headers["Title"], "Codex")
+
+    def test_claude_message_uses_fixed_source_text_and_safe_label(self) -> None:
+        settings = load_settings(self.environment)
+        observed: list[object] = []
+
+        def opener(request: object, timeout: float) -> FakeResponse:
+            observed.append((request, timeout))
+            return FakeResponse()
+
+        publish(settings, source="claude", label="Research", opener=opener)
+        request, _timeout = observed[0]
+        self.assertEqual(request.data, b"Claude turn completed. [Research]")
+        self.assertEqual(request.headers["Title"], "Claude [Research]")
+
+    def test_invalid_label_is_rejected_before_network(self) -> None:
+        settings = load_settings(self.environment)
+        opener = Mock()
+        with self.assertRaises(ValueError):
+            publish(settings, source="claude", label="private\ntext", opener=opener)
+        opener.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,6 +13,7 @@ from urllib.error import HTTPError
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import codex_notify
+from status_labels import set_label
 
 
 class FakeResponse:
@@ -30,6 +32,8 @@ class FakeResponse:
 
 class NotifierTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.labels_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.labels_dir.cleanup)
         self.event = json.dumps(
             {
                 "type": codex_notify.SUPPORTED_EVENT,
@@ -42,6 +46,7 @@ class NotifierTests(unittest.TestCase):
         self.environment = {
             "CODEX_NOTIFY_URL": "https://notify.example.test/v1/codex/turn-complete",
             "CODEX_NOTIFY_TOKEN": "relay_test_value_that_never_leaves_the_process",
+            "CODEX_NOTIFY_LABELS_FILE": str(Path(self.labels_dir.name) / "labels.json"),
         }
 
     def test_event_parser_discards_all_content_except_supported_type(self) -> None:
@@ -81,6 +86,45 @@ class NotifierTests(unittest.TestCase):
         self.assertEqual(request.headers["Authorization"], f"Bearer {self.environment['CODEX_NOTIFY_TOKEN']}")
         self.assertEqual(request.headers["Content-type"], "application/json")
         self.assertEqual(request.headers["User-agent"], "codex-notify/1.0")
+        self.assertNotIn("private", request.data.decode())
+
+    def test_registered_thread_label_is_the_only_extra_payload(self) -> None:
+        set_label(
+            "codex",
+            "thread-123",
+            "Build API",
+            environ=self.environment,
+        )
+        requests: list[object] = []
+
+        def opener(request: object, timeout: float) -> FakeResponse:
+            requests.append((request, timeout))
+            return FakeResponse()
+
+        result = codex_notify.main(
+            [
+                "codex-notify",
+                json.dumps(
+                    {
+                        "type": codex_notify.SUPPORTED_EVENT,
+                        "thread-id": "thread-123",
+                        "cwd": "/private/worktree",
+                        "input-messages": ["private prompt"],
+                        "last-assistant-message": "private response",
+                    }
+                ),
+            ],
+            environ=self.environment,
+            opener=opener,
+        )
+
+        self.assertEqual(result, 0)
+        request, _timeout = requests[0]
+        self.assertEqual(
+            request.data,
+            b'{"type":"agent-turn-complete","label":"Build API"}',
+        )
+        self.assertNotIn("thread-123", request.data.decode())
         self.assertNotIn("private", request.data.decode())
 
     def test_token_file_is_supported_without_printing_token(self) -> None:

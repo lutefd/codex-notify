@@ -1,35 +1,51 @@
-# Codex status notifications
+# Codex and Claude status notifications
 
-This repository contains a small status-only relay for Codex completion
-alerts. A Codex host sends one fixed event to the authenticated relay. The
-relay validates the exact event schema and publishes the fixed message
-`Codex turn completed.` to a private self-hosted [ntfy](https://ntfy.sh)
-topic.
+This repository contains a small status-only relay for Codex and Claude Code
+completion alerts. Each host sends one bounded event to the authenticated
+relay. The relay validates the event schema and publishes a fixed message to
+one private self-hosted [ntfy](https://ntfy.sh) topic. Both tools use the same
+topic, reader account, publisher credential, and public relay route.
 
 The notification says that a turn ended. It does not mean that a task
 succeeded, and it intentionally carries no prompt, assistant text, code,
 working directory, session title, or transcript.
 
 The public boundary is the relay at `/v1/codex/turn-complete`. It accepts only
-the following JSON object:
+these status-only forms:
 
 ```json
 {"type":"agent-turn-complete"}
+{"type":"agent-turn-complete","source":"claude"}
+{"type":"agent-turn-complete","source":"claude","label":"Build API"}
 ```
 
-Unknown fields and arbitrary message text are rejected before ntfy is called.
-The relay's ntfy client also has a fixed message body, so request content can
-never become a notification body.
+The `source` value is either `codex` or `claude`; the source may be omitted for
+backward-compatible Codex events. The optional label is a user-chosen local
+name, limited to 48 letters, numbers, spaces, `.`, `_`, and `-`, without
+leading or trailing spaces. Unknown fields and arbitrary message text are
+rejected before ntfy is called. The relay's ntfy client uses fixed source
+messages and appends only the validated label, so request content can never
+become a notification body.
+
+The fixed messages are `Codex turn completed.` and `Claude turn completed.`.
+When a label is present, the notification body appends it in brackets, for
+example `Claude turn completed. [Research]`.
 
 ## Components
 
 - `src/codex_notify.py` is the dependency-free Codex `notify` command. It
-  reads Codex's one JSON argument, filters to `agent-turn-complete`, and sends
-  the fixed event over outbound HTTPS.
+  reads Codex's one JSON argument, filters to `agent-turn-complete`, resolves
+  an optional local label from Codex's opaque `thread-id`, and sends the fixed
+  event over outbound HTTPS.
+- `src/claude_notify.py` is the dependency-free Claude Code `Stop` hook. It
+  reads only the hook name, loop-guard flag, and opaque `session_id`; it never
+  reads response text or transcript files.
 - `src/codex_notify_gateway.py` is the authenticated HTTP relay. It should be
   the only public application route.
 - `src/ntfy_client.py` publishes the fixed message to ntfy over the private
   service network.
+- `src/status_labels.py` and `bin/codex-notify-label` keep the optional
+  per-session label map on the host. The map is never sent to the server.
 - `compose.yaml`, ntfy configuration, and tunnel route files are deployment
   owned. Keep tokens and passwords outside Git.
 
@@ -179,6 +195,8 @@ local copy of `gateway.token`:
 ```text
 CODEX_NOTIFY_URL=https://codex-notify.luisdourado.com/v1/codex/turn-complete
 CODEX_NOTIFY_TOKEN_FILE=<path-to-user-token-file>
+# Optional: use one explicit path for the local per-session label map.
+CODEX_NOTIFY_LABELS_FILE=<path-to-user-labels-file>
 ```
 
 Then put this in the user-level Codex configuration file (`~/.codex/config.toml`
@@ -204,6 +222,35 @@ shell's exports, so set persistent user environment variables or launch the
 host from a session that has them. The token file is supported on all three
 systems.
 
+### Label simultaneous Codex threads
+
+Codex's documented `notify` payload includes an opaque `thread-id`. The helper
+uses that ID only as a key in the local labels file; it never sends the ID or
+reads the prompt, response, working directory, or transcript. After a
+completion has been observed, list the local IDs and assign the labels you
+choose:
+
+```sh
+python3 /absolute/path/to/codex-notify/bin/codex-notify-label list
+python3 /absolute/path/to/codex-notify/bin/codex-notify-label set \
+  --source codex --id <opaque-thread-id> --label "Build API"
+```
+
+The helper records an opaque ID with an unlabeled entry when it first sees a
+completion. If you already know a thread ID, register it before the next turn
+to label that notification too. A user-level Codex Desktop `notify` setting is
+global, so a single global label cannot distinguish simultaneously running
+threads; the ID map is the per-thread mechanism. The first event for an ID
+that has not been registered yet is therefore intentionally unlabeled. The
+default map is `~/.config/codex-notify/labels.json` on Unix-like systems and
+`%APPDATA%/codex-notify/labels.json` on Windows, unless
+`CODEX_NOTIFY_LABELS_FILE` is set.
+
+For a separately launched Codex CLI process, `CODEX_NOTIFY_LABEL="Build API"`
+can be set in that process's environment. Do not set it globally for a
+Desktop installation with multiple threads, because the same value would be
+used for every unregistered thread.
+
 The official Codex configuration uses `notify` for an external program and
 currently documents the `agent-turn-complete` event. `notify` is a host-side
 configuration: the ChatGPT desktop application's own turn and permission
@@ -219,8 +266,73 @@ turn and verify the single fixed notification on the iPhone.
 
 Official references:
 
-- [Codex advanced configuration: notifications](https://developers.openai.com/docs/config-file/config-advanced#notifications)
-- [Codex notifications by surface](https://developers.openai.com/docs/notifications)
+- [Codex advanced configuration: notifications](https://developers.openai.com/codex/config-advanced/#notifications)
+- [Codex configuration reference](https://developers.openai.com/codex/config-reference/)
+
+## Configure Claude Code
+
+Claude Code uses the same `CODEX_NOTIFY_URL`, protected
+`CODEX_NOTIFY_TOKEN_FILE`, optional `CODEX_NOTIFY_LABELS_FILE`, public relay
+path, ntfy topic, and iPhone reader account as Codex. It does not need a new
+topic or credential. Keep the relay token in a user-readable protected file;
+do not place it directly in the hook command.
+
+Add a user-level `Stop` hook to `~/.claude/settings.json` on Unix-like
+systems, or `%USERPROFILE%/.claude/settings.json` on Windows:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /absolute/path/to/codex-notify/bin/claude-notify"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+On Windows, use a command such as
+`py C:/Users/you/codex-notify/bin/claude-notify`. Ensure the Claude process
+inherits the persistent `CODEX_NOTIFY_URL` and `CODEX_NOTIFY_TOKEN_FILE`
+variables before restarting it. Run `/hooks` in Claude Code to verify that the
+user-level command is loaded.
+
+The official Claude `Stop` event runs when the main agent has finished
+responding. It does not run after a user interrupt; API failures use
+`StopFailure`, which this status-only setup does not subscribe to. The helper
+ignores `stop_hook_active` so it cannot create a continuation loop and always
+exits successfully, even if delivery fails, so a notification outage cannot
+block Claude. A `Claude turn completed.` alert means that the turn ended; it
+does not mean that the task succeeded.
+
+Claude's hook input includes an opaque `session_id`. The helper uses it only
+as the local label-map key and ignores `last_assistant_message`,
+`transcript_path`, `cwd`, and all other hook fields. After the first Stop event
+for a session, assign a label without exposing its content:
+
+```sh
+python3 /absolute/path/to/codex-notify/bin/codex-notify-label list
+python3 /absolute/path/to/codex-notify/bin/codex-notify-label set \
+  --source claude --id <opaque-session-id> --label "Research"
+```
+
+Labels are local, bounded, and optional. Both sources continue to publish to
+the same ntfy topic, with the same iPhone subscription and reader credential.
+When launching separate Claude Code processes, `CLAUDE_NOTIFY_LABEL` can be set
+in each process environment for first-turn labeling; a shared global value
+would label every unregistered process the same way.
+
+Official references:
+
+- [Claude Code hooks guide](https://code.claude.com/docs/en/hooks-guide)
+- [Claude Code hooks reference](https://code.claude.com/docs/en/hooks)
 
 ## Configure the iPhone
 
@@ -239,7 +351,7 @@ the same canonical HTTPS base URL everywhere:
    Authorization header for the same server at the same time. Do not use the
    relay or publisher token on the phone.
 3. Allow notifications and send one test completion event from the work
-   host.
+   host. Codex and Claude Code publish to this same subscription.
 
 If the app reports that `codex-phone` is not authorized to read the topic,
 check the server and topic before changing permissions. The topic must be the
@@ -280,9 +392,11 @@ put it in the command line:
 python3 src/codex_notify.py '{"type":"agent-turn-complete"}'
 ```
 
-Verify that the iPhone receives exactly `Codex turn completed.`. An event that
-contains a prompt, code, `cwd`, or any extra field must receive a client error
-from the relay and must not create an ntfy message.
+Verify that the iPhone receives exactly `Codex turn completed.` for Codex, or
+`Claude turn completed.` for Claude. A registered label appears only in the
+fixed bracket suffix. An event that contains a prompt, code, `cwd`, response
+text, or any other extra field must receive a client error from the relay and
+must not create an ntfy message.
 
 ## Secret and history checks
 
