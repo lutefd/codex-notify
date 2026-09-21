@@ -50,7 +50,7 @@ them:
 
 ```text
 CODEX_NOTIFY_GATEWAY_TOKEN_FILE=/run/secrets/codex_notify_gateway_token
-NTFY_BASE_URL=http://ntfy
+NTFY_BASE_URL=http://codex-notify-ntfy
 NTFY_TOPIC=<private-topic>
 NTFY_TOKEN_FILE=/run/secrets/ntfy_publisher_token
 NTFY_ALLOW_INSECURE_HTTP=1
@@ -72,6 +72,22 @@ The current tunnel route contract is:
 Cloudflare DNS records and remote tunnel ingress must resolve these hostnames
 before a work computer or iPhone can connect.
 
+The cloudflared connector already joins the shared Docker network. Configure
+its public-hostname services with the unique network aliases below:
+
+- `notify.luisdourado.com` → `http://codex-notify-ntfy:80`;
+- `codex-notify.luisdourado.com` → `http://codex-notify-gateway:8080`.
+
+The default Compose stack publishes no host ports. While Cloudflare routes are
+pending, an optional `compose.tailscale.yaml` override can bind diagnostics to
+the server's Tailscale address only. That gives Tailscale clients the gateway
+health URL `http://<tailscale-ip>:18080/healthz` and ntfy health URL
+`http://<tailscale-ip>:18081/v1/health`; it does not create a public WAN
+listener. The alternate ntfy URL is for diagnostics or private polling only.
+For iOS instant delivery, keep the canonical `https://notify.luisdourado.com`
+server name, or use split-horizon DNS so the same name resolves privately with
+a matching certificate.
+
 Configure ntfy as a private instance with `auth-default-access: deny-all`.
 Use separate regular users and tokens:
 
@@ -84,17 +100,37 @@ user account. Dedicated users and topic ACLs are therefore necessary; do not
 reuse an admin token. See the [ntfy access-control documentation](https://docs.ntfy.sh/config/#access-control)
 and [token documentation](https://docs.ntfy.sh/config/#access-tokens).
 
+## Retrieve credentials safely
+
+The deployment host keeps connection material outside this repository. The
+protected files and their purposes are:
+
+- `/home/luis/.config/codex-notify/gateway.token` — the bearer token the work
+  computer sends to the public relay;
+- `/home/luis/.config/codex-notify/publisher.token` — the relay's internal
+  ntfy publisher credential; keep it on the server;
+- `/home/luis/.config/codex-notify/connection.env` — server-side connection
+  details, including `NTFY_PHONE_USERNAME`, `NTFY_PHONE_PASSWORD`, and
+  `NTFY_TOPIC` for the iPhone reader.
+
+Retrieve only the values needed for a device through an approved secure
+channel or password manager. Do not print these files, paste their contents in
+chat, place values in shell history, or commit them. The work computer needs a
+protected copy of `gateway.token`; the iPhone needs the reader username,
+reader password, and topic from `connection.env`. The publisher token is not
+used by either device.
+
 ## Configure the Codex host
 
 The public relay URL and token are local user settings. Prefer a token file so
 the token does not appear in shell history or process listings. The file must
 contain only the relay bearer token and should be readable only by the user.
 
-Set these user environment variables on the work computer, replacing the
-placeholders with the deployment's public relay URL and the relay token file:
+Set these user environment variables on the work computer, using a protected
+local copy of `gateway.token`:
 
 ```text
-CODEX_NOTIFY_URL=https://<relay-host>/v1/codex/turn-complete
+CODEX_NOTIFY_URL=https://codex-notify.luisdourado.com/v1/codex/turn-complete
 CODEX_NOTIFY_TOKEN_FILE=<path-to-user-token-file>
 ```
 
@@ -129,6 +165,11 @@ particular Desktop build does not invoke the host `notify` command, keep its
 built-in notifications enabled or use the connected Codex CLI/IDE host for
 this relay.
 
+The helper and gateway are covered by automated fixture tests. Actual
+execution by the user's work Codex Desktop host remains untested until that
+host is configured; after DNS and the tunnel route are available, complete one
+turn and verify the single fixed notification on the iPhone.
+
 Official references:
 
 - [Codex advanced configuration: notifications](https://developers.openai.com/docs/config-file/config-advanced#notifications)
@@ -139,10 +180,12 @@ Official references:
 Install the [ntfy iOS app](https://apps.apple.com/app/ntfy/id1625396347). Use
 the same canonical HTTPS base URL everywhere:
 
-1. Set ntfy's Default Server to `https://<ntfy-host>` exactly as configured by
-   the server's `base-url`.
-2. Add the topic name and authenticate with the reader account. The app can
-   use the reader username/password; recent versions also support a custom
+1. Set ntfy's Default Server to `https://notify.luisdourado.com` exactly as
+   configured by the server's `base-url`.
+2. Add the `NTFY_TOPIC` value retrieved from the protected
+   `/home/luis/.config/codex-notify/connection.env` and authenticate with the
+   `NTFY_PHONE_USERNAME` and `NTFY_PHONE_PASSWORD` values from that file. The
+   app can use the reader username/password; recent versions also support a custom
    `Authorization: Bearer ...` header under Settings > Advanced > Custom
    headers. Do not use the relay or publisher token on the phone.
 3. Allow notifications and send one test completion event from the work

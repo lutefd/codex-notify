@@ -1,0 +1,21 @@
+# Optional local fallback. This file is never loaded by the default stack.
+# The shared cloudflare_ingress network is internal, so the overlay attaches
+# these services to a private, project-local bridge before binding ports. Set
+# TAILSCALE_BIND_IP to this host's current Tailscale IPv4 address before using
+# it; Docker then binds these ports to that address only.
+services:
+  codex-notify-ntfy:
+    networks:
+      codex-notify-tailscale-fallback: {}
+    ports:
+      - "${TAILSCALE_BIND_IP:?set TAILSCALE_BIND_IP to the server Tailscale IPv4}:18081:80"
+
+  codex-notify-gateway:
+    networks:
+      codex-notify-tailscale-fallback: {}
+    ports:
+      - "${TAILSCALE_BIND_IP:?set TAILSCALE_BIND_IP to the server Tailscale IPv4}:18080:8080"
+
+networks:
+  codex-notify-tailscale-fallback:
+    driver: bridge

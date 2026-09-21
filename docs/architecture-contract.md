@@ -10,7 +10,7 @@ Codex host
 Cloudflare tunnel → codex-notify-gateway:8080
     │ exact JSON schema; fixed status body
     ▼
-private Docker network → ntfy:80 + publisher token
+private Docker network → codex-notify-ntfy:80 + publisher token
     │ topic ACL and cache
     ▼
 ntfy canonical HTTPS host → iPhone reader account
@@ -37,6 +37,15 @@ The existing server-wide `cloudflare_ingress` network is the expected tunnel
 attachment point. The deployment agent should add the gateway and ntfy
 services to that network according to the host's current tunnel route, without
 adding host-published ports unless required for local administration.
+
+Use the unique shared-network service aliases in tunnel ingress rules:
+
+- `https://notify.luisdourado.com` → `http://codex-notify-ntfy:80`;
+- `https://codex-notify.luisdourado.com` →
+  `http://codex-notify-gateway:8080`.
+
+Do not use generic `ntfy`, `gateway`, or `codex-notify` aliases because the
+network is shared with other applications.
 
 The configured public names are `notify.luisdourado.com` for the ntfy
 canonical host and `codex-notify.luisdourado.com` for the relay. The latter's
