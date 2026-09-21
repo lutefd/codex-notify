@@ -32,7 +32,6 @@ services:
       cloudflare-ingress:
         aliases:
           - ntfy
-          - codex-notify
     healthcheck:
       test:
         - CMD-SHELL
@@ -42,6 +41,52 @@ services:
       retries: 5
       start_period: 20s
 
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: codex-notify-gateway:local
+    container_name: codex-notify-gateway
+    hostname: gateway
+    user: "1000:1000"
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    expose:
+      - "8080"
+    environment:
+      CODEX_NOTIFY_GATEWAY_TOKEN_FILE: /run/secrets/codex_notify_gateway_token
+      CODEX_NOTIFY_GATEWAY_HOST: 0.0.0.0
+      CODEX_NOTIFY_GATEWAY_PORT: "8080"
+      NTFY_BASE_URL: http://ntfy
+      NTFY_TOPIC: ${NTFY_TOPIC:?set NTFY_TOPIC in .env or the environment}
+      NTFY_TOKEN_FILE: /run/secrets/ntfy_publisher_token
+      NTFY_ALLOW_INSECURE_HTTP: "1"
+    secrets:
+      - codex_notify_gateway_token
+      - ntfy_publisher_token
+    networks:
+      cloudflare-ingress:
+        aliases:
+          - gateway
+          - codex-notify
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).read()
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   ntfy_data:
 
@@ -49,3 +94,9 @@ networks:
   cloudflare-ingress:
     external: true
     name: cloudflare_ingress
+
+secrets:
+  codex_notify_gateway_token:
+    file: ${CODEX_GATEWAY_TOKEN_FILE:-/home/luis/.config/codex-notify/gateway.token}
+  ntfy_publisher_token:
+    file: ${NTFY_PUBLISH_TOKEN_FILE:-/home/luis/.config/codex-notify/publisher.token}
