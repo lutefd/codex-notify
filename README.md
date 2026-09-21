@@ -88,6 +88,18 @@ For iOS instant delivery, keep the canonical `https://notify.luisdourado.com`
 server name, or use split-horizon DNS so the same name resolves privately with
 a matching certificate.
 
+To enable the fallback on the server, use its current Tailscale IPv4 and keep
+the two Compose files together:
+
+```sh
+TAILSCALE_BIND_IP=100.90.77.90 \
+  docker compose -f compose.yaml -f compose.tailscale.yaml up -d
+```
+
+The shared `cloudflare_ingress` network is internal, so the override adds a
+small project-local bridge solely to make those Tailscale-bound ports work.
+The base file remains the Cloudflare-only deployment contract.
+
 Configure ntfy as a private instance with `auth-default-access: deny-all`.
 Use separate regular users and tokens:
 
