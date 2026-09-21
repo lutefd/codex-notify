@@ -232,11 +232,24 @@ the same canonical HTTPS base URL everywhere:
 2. Add the `NTFY_TOPIC` value retrieved from the protected
    `/home/luis/.config/codex-notify/connection.env` and authenticate with the
    `NTFY_PHONE_USERNAME` and `NTFY_PHONE_PASSWORD` values from that file. The
-   app can use the reader username/password; recent versions also support a custom
-   `Authorization: Bearer ...` header under Settings > Advanced > Custom
-   headers. Do not use the relay or publisher token on the phone.
+   app's reader username/password fields are the recommended setup. The
+   `NTFY_PHONE_PASSWORD` value is an account password, not a bearer token. Do
+   not also configure a custom `Authorization` header under Settings >
+   Advanced > Custom headers: ntfy does not allow a user account and a custom
+   Authorization header for the same server at the same time. Do not use the
+   relay or publisher token on the phone.
 3. Allow notifications and send one test completion event from the work
    host.
+
+If the app reports that `codex-phone` is not authorized to read the topic,
+check the server and topic before changing permissions. The topic must be the
+exact `NTFY_TOPIC` value from `connection.env`, with no quotes, spaces, or
+trailing characters, and the server must be exactly
+`https://notify.luisdourado.com`. The deployed `codex-phone` account is
+already read-only for that one topic; it does not have a wildcard read grant.
+If using a custom Authorization header instead of the reader account, it must
+contain an ntfy access token, not `NTFY_PHONE_PASSWORD`, and the reader account
+must be removed from that server entry in the app.
 
 For instant iOS delivery, the ntfy server must set
 `upstream-base-url: "https://ntfy.sh"`. The phone must be able to reach the
