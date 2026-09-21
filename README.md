@@ -84,6 +84,13 @@ starting the stack. It adds `ntfy` and `gateway` only after the current shared
 network was checked for collisions. Remove that overlay as soon as the remote
 routes use the unique names above.
 
+The current server uses that compatibility overlay while the remote dashboard
+routes still point at the former names. The intended migration is to change
+the two dashboard targets to `codex-notify-ntfy:80` and
+`codex-notify-gateway:8080`, restart without the compatibility overlay, and
+then remove the legacy aliases. The overlay is a temporary bridge rather than
+part of the permanent network contract.
+
 The default Compose stack publishes no host ports. While Cloudflare routes are
 pending, an optional `compose.tailscale.yaml` override can bind diagnostics to
 the server's Tailscale address only. That gives Tailscale clients the gateway

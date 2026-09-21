@@ -44,8 +44,12 @@ Use the unique shared-network service aliases in tunnel ingress rules:
 - `https://codex-notify.luisdourado.com` →
   `http://codex-notify-gateway:8080`.
 
-Do not use generic `ntfy`, `gateway`, or `codex-notify` aliases because the
-network is shared with other applications.
+The base Compose file does not use generic `ntfy`, `gateway`, or
+`codex-notify` aliases because the network is shared with other applications.
+While the existing remote tunnel still points at the former generic names,
+the temporary `compose.cloudflare-compat.yaml` overlay may add only `ntfy` and
+`gateway` after a collision check. Remove that overlay after migrating the
+dashboard routes to the unique aliases above.
 
 The configured public names are `notify.luisdourado.com` for the ntfy
 canonical host and `codex-notify.luisdourado.com` for the relay. The latter's
