@@ -78,6 +78,12 @@ its public-hostname services with the unique network aliases below:
 - `notify.luisdourado.com` → `http://codex-notify-ntfy:80`;
 - `codex-notify.luisdourado.com` → `http://codex-notify-gateway:8080`.
 
+If the existing remote tunnel still targets the former generic names during
+the migration, temporarily include `compose.cloudflare-compat.yaml` when
+starting the stack. It adds `ntfy` and `gateway` only after the current shared
+network was checked for collisions. Remove that overlay as soon as the remote
+routes use the unique names above.
+
 The default Compose stack publishes no host ports. While Cloudflare routes are
 pending, an optional `compose.tailscale.yaml` override can bind diagnostics to
 the server's Tailscale address only. That gives Tailscale clients the gateway

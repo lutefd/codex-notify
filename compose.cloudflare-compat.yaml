@@ -1,0 +1,16 @@
+# Temporary migration overlay for a tunnel whose remote ingress still refers
+# to the former generic aliases. Remove this file from the Compose invocation
+# after changing the Cloudflare public-hostname services to the unique aliases
+# in compose.yaml.
+services:
+  codex-notify-ntfy:
+    networks:
+      cloudflare-ingress:
+        aliases:
+          - ntfy
+
+  codex-notify-gateway:
+    networks:
+      cloudflare-ingress:
+        aliases:
+          - gateway
