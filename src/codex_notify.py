@@ -145,6 +145,7 @@ def publish(
         headers={
             "Authorization": f"Bearer {settings.token}",
             "Content-Type": "application/json",
+            "User-Agent": "codex-notify/1.0",
         },
         method="POST",
     )

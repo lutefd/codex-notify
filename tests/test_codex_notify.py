@@ -80,6 +80,7 @@ class NotifierTests(unittest.TestCase):
         self.assertEqual(request.data, b'{"type":"agent-turn-complete"}')
         self.assertEqual(request.headers["Authorization"], f"Bearer {self.environment['CODEX_NOTIFY_TOKEN']}")
         self.assertEqual(request.headers["Content-type"], "application/json")
+        self.assertEqual(request.headers["User-agent"], "codex-notify/1.0")
         self.assertNotIn("private", request.data.decode())
 
     def test_token_file_is_supported_without_printing_token(self) -> None:
