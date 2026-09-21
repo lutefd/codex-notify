@@ -63,6 +63,15 @@ expose only that service through the tunnel. `/healthz` returns `ok`; the
 publish route returns `204` on success and no response body containing event
 data.
 
+The current tunnel route contract is:
+
+- ntfy subscription/default server: `https://notify.luisdourado.com`;
+- work-computer relay endpoint:
+  `https://codex-notify.luisdourado.com/v1/codex/turn-complete`.
+
+Cloudflare DNS records and remote tunnel ingress must resolve these hostnames
+before a work computer or iPhone can connect.
+
 Configure ntfy as a private instance with `auth-default-access: deny-all`.
 Use separate regular users and tokens:
 

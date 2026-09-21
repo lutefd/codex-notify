@@ -37,3 +37,8 @@ The existing server-wide `cloudflare_ingress` network is the expected tunnel
 attachment point. The deployment agent should add the gateway and ntfy
 services to that network according to the host's current tunnel route, without
 adding host-published ports unless required for local administration.
+
+The configured public names are `notify.luisdourado.com` for the ntfy
+canonical host and `codex-notify.luisdourado.com` for the relay. The latter's
+publish path is `/v1/codex/turn-complete`. DNS and remote tunnel ingress are
+control-plane prerequisites and are not represented by local Compose health.
