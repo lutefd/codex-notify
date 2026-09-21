@@ -98,11 +98,16 @@ CODEX_NOTIFY_URL=https://<relay-host>/v1/codex/turn-complete
 CODEX_NOTIFY_TOKEN_FILE=<path-to-user-token-file>
 ```
 
-Then put this in the user-level Codex configuration file:
+Then put this in the user-level Codex configuration file (`~/.codex/config.toml`
+on Unix-like systems, or the corresponding `%USERPROFILE%/.codex/config.toml`
+on Windows):
 
 ```toml
 notify = ["python3", "/absolute/path/to/codex-notify/src/codex_notify.py"]
 ```
+
+Keep this key at the user level. Codex ignores `notify` in a project-local
+`.codex/config.toml` because notification commands are host-wide settings.
 
 On Windows, use `python` or `py` and a forward-slash path, for example:
 
