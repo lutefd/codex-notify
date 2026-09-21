@@ -32,6 +32,7 @@ services:
       cloudflare-ingress:
         aliases:
           - codex-notify-ntfy
+      ntfy-egress: {}
     healthcheck:
       test:
         - CMD-SHELL
@@ -93,6 +94,8 @@ networks:
   cloudflare-ingress:
     external: true
     name: cloudflare_ingress
+  ntfy-egress:
+    name: codex-notify-ntfy-egress
 
 secrets:
   codex_notify_gateway_token:

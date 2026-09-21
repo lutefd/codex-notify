@@ -101,12 +101,34 @@ For iOS instant delivery, keep the canonical `https://notify.luisdourado.com`
 server name, or use split-horizon DNS so the same name resolves privately with
 a matching certificate.
 
-To enable the fallback on the server, use its current Tailscale IPv4 and keep
-the two Compose files together:
+The base stack also attaches ntfy to the dedicated
+`codex-notify-ntfy-egress` bridge. This gives ntfy outbound HTTPS access to
+`https://ntfy.sh` for iOS wakeups while the gateway remains on the internal
+shared network. The optional Tailscale bridge is reserved for private
+diagnostics and should be enabled only when those ports are needed.
+
+The active server currently uses all three files while the remote tunnel still
+targets the legacy aliases. Start or recreate it with the current Tailscale
+IPv4:
 
 ```sh
 TAILSCALE_BIND_IP=100.90.77.90 \
-  docker compose -f compose.yaml -f compose.tailscale.yaml up -d
+  docker compose \
+    -f compose.yaml \
+    -f compose.tailscale.yaml \
+    -f compose.cloudflare-compat.yaml \
+    up -d --build
+```
+
+To force a full container refresh while keeping the same active overlays:
+
+```sh
+TAILSCALE_BIND_IP=100.90.77.90 \
+  docker compose \
+    -f compose.yaml \
+    -f compose.tailscale.yaml \
+    -f compose.cloudflare-compat.yaml \
+    up -d --build --force-recreate
 ```
 
 The shared `cloudflare_ingress` network is internal, so the override adds a

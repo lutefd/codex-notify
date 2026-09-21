@@ -38,6 +38,11 @@ attachment point. The deployment agent should add the gateway and ntfy
 services to that network according to the host's current tunnel route, without
 adding host-published ports unless required for local administration.
 
+The base stack gives ntfy a dedicated non-internal egress network for its
+HTTPS connection to `https://ntfy.sh` during iOS wakeup delivery. The gateway
+does not join that network. Optional Tailscale diagnostics use a separate
+project-local bridge for their private host bindings.
+
 Use the unique shared-network service aliases in tunnel ingress rules:
 
 - `https://notify.luisdourado.com` → `http://codex-notify-ntfy:80`;
